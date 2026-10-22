@@ -13,9 +13,9 @@ spec:
         app: campus-helpdesk
     spec:
       containers:
-        - name: campus-helpdesk
-          image: DOCKERHUB_USERNAME/campus-helpdesk:latest
-          imagePullPolicy: Always
+        - name: campus-helpdesk 
+          image: campus-helpdesk-portal:1.0
+          imagePullPolicy: Never
           ports:
             - containerPort: 5000
           readinessProbe:
