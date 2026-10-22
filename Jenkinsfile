@@ -3,6 +3,7 @@ pipeline {
     agent any
 
     environment {
+        PATH = "C:\\Users\\Ajit\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;${env.PATH}"
         IMAGE_NAME = 'campus-helpdesk'
         REGISTRY_CREDENTIALS = 'dockerhub-creds'
     }
@@ -31,6 +32,7 @@ pipeline {
                     if not exist .venv (
                         python -m venv .venv
                     )
+                    if errorlevel 1 exit /b 1
 
                     call .venv\\Scripts\\activate.bat
 
@@ -156,7 +158,7 @@ pipeline {
         }
 
         failure {
-            echo 'FAILED: Open Console Output and check the first error.'
+            echo 'FAILED: Check Console Output for the first error.'
         }
     }
 }
