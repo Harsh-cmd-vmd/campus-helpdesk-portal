@@ -23,3 +23,4 @@ python app.py
 On Windows, activate with `.venv\\Scripts\\activate`. Open `http://127.0.0.1:5000`.
 
 Before running Jenkins: push to GitHub; replace `DOCKERHUB_USERNAME` in `k8s/deployment.yaml`; create a Jenkins Username/password credential with ID `dockerhub-creds` (Docker Hub username + access token); make sure the Jenkins build user/agent can run Python, Docker, kubectl and access the same running Minikube cluster.
+# campus-helpdesk-portal
