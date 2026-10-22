@@ -1,9 +1,10 @@
+
 pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "campus-helpdesk"
-        REGISTRY_CREDENTIALS = "dockerhub-creds"
+        IMAGE_NAME = 'campus-helpdesk'
+        REGISTRY_CREDENTIALS = 'dockerhub-creds'
     }
 
     stages {
@@ -13,26 +14,47 @@ pipeline {
             }
         }
 
-        stage('Build and Test') {
+        stage('Check Tools') {
             steps {
                 bat '''
                     python --version
-                    if not exist .venv python -m venv .venv
+                    git --version
+                    docker --version
+                    kubectl version --client
+                '''
+            }
+        }
+
+        stage('Build and Test') {
+            steps {
+                bat '''
+                    if not exist .venv (
+                        python -m venv .venv
+                    )
+
                     call .venv\\Scripts\\activate.bat
+
                     python -m pip install --upgrade pip
+                    if errorlevel 1 exit /b 1
+
                     python -m pip install -r requirements.txt
-                    python -m unittest -v
+                    if errorlevel 1 exit /b 1
+
+                    python -m unittest discover -v
+                    if errorlevel 1 exit /b 1
                 '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: "${REGISTRY_CREDENTIALS}",
-                    usernameVariable: 'DOCKERHUB_USER',
-                    passwordVariable: 'DOCKERHUB_TOKEN'
-                )]) {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKERHUB_USER',
+                        passwordVariable: 'DOCKERHUB_TOKEN'
+                    )
+                ]) {
                     bat '''
                         docker build -t "%DOCKERHUB_USER%/%IMAGE_NAME%:%BUILD_NUMBER%" .
                         if errorlevel 1 exit /b 1
@@ -46,42 +68,55 @@ pipeline {
 
         stage('Push Image to Docker Hub') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: "${REGISTRY_CREDENTIALS}",
-                    usernameVariable: 'DOCKERHUB_USER',
-                    passwordVariable: 'DOCKERHUB_TOKEN'
-                )]) {
-                    bat '''
-                        docker login -u "%DOCKERHUB_USER%" --password-stdin < nul
-                    '''
-                    powershell(
-                        label: 'Login and push Docker images',
-                        script: '''
-                            $ErrorActionPreference = 'Stop'
-                            $env:DOCKERHUB_TOKEN | docker login -u $env:DOCKERHUB_USER --password-stdin
-                            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-                            docker push "$env:DOCKERHUB_USER/$env:IMAGE_NAME:$env:BUILD_NUMBER"
-                            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-                            docker push "$env:DOCKERHUB_USER/$env:IMAGE_NAME`:latest"
-                            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-                            docker logout
-                        '''
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKERHUB_USER',
+                        passwordVariable: 'DOCKERHUB_TOKEN'
                     )
+                ]) {
+                    powershell '''
+                        $ErrorActionPreference = "Stop"
+
+                        $env:DOCKERHUB_TOKEN |
+                            docker login -u $env:DOCKERHUB_USER --password-stdin
+
+                        if ($LASTEXITCODE -ne 0) {
+                            exit $LASTEXITCODE
+                        }
+
+                        $tag = "$($env:DOCKERHUB_USER)/$($env:IMAGE_NAME):$($env:BUILD_NUMBER)"
+                        $latest = "$($env:DOCKERHUB_USER)/$($env:IMAGE_NAME):latest"
+
+                        docker push $tag
+                        if ($LASTEXITCODE -ne 0) {
+                            exit $LASTEXITCODE
+                        }
+
+                        docker push $latest
+                        if ($LASTEXITCODE -ne 0) {
+                            exit $LASTEXITCODE
+                        }
+
+                        docker logout
+                    '''
                 }
             }
         }
 
         stage('Deploy to Minikube') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: "${REGISTRY_CREDENTIALS}",
-                    usernameVariable: 'DOCKERHUB_USER',
-                    passwordVariable: 'DOCKERHUB_TOKEN'
-                )]) {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKERHUB_USER',
+                        passwordVariable: 'DOCKERHUB_TOKEN'
+                    )
+                ]) {
                     bat '''
+                        kubectl config current-context
+                        if errorlevel 1 exit /b 1
+
                         kubectl apply -f k8s/
                         if errorlevel 1 exit /b 1
 
@@ -101,10 +136,10 @@ pipeline {
                     kubectl get pods
                     if errorlevel 1 exit /b 1
 
-                    kubectl get deployment campus-helpdesk
+                    kubectl get deployments
                     if errorlevel 1 exit /b 1
 
-                    kubectl get service campus-helpdesk
+                    kubectl get services
                     if errorlevel 1 exit /b 1
                 '''
             }
@@ -113,11 +148,15 @@ pipeline {
 
     post {
         always {
-            bat 'docker image prune -f'
+            echo 'Pipeline finished.'
         }
 
         success {
-            echo 'Pipeline succeeded. Check the campus-helpdesk service in Kubernetes.'
+            echo 'SUCCESS: Build, test, Docker push, and deployment completed.'
+        }
+
+        failure {
+            echo 'FAILED: Open Console Output and check the first error.'
         }
     }
 }
